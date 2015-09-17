@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
             return -1;
         }
     } else {
-        std::cout << "USEAGE:\n\tGenerate new drive file:\n\t\t"
+        std::cout << "USAGE:\n\tGenerate new drive file:\n\t\t"
                   << argv[0] << " FILENAME"
                   "\n\tGenerate new drive with (e)mpty, (r)andom, or (f)ull block map:\n\t\t"
                   << argv[0] << " [erf] FILENAME" << std::endl;
