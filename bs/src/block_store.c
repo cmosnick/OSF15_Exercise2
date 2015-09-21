@@ -1,3 +1,8 @@
+//TODO: remove stdio.h
+#include <stdio.h>
+#define assert(e) ((e) ? (true) : \
+                   (fprintf(stderr,"%s,%d: assertion '%s' failed\n",__FILE__, __LINE__, #e), \
+                    fflush(stdout), abort()))
 #include "../include/block_store.h"
 
 // Overriding these will probably break it since I'm not testing it that much
@@ -9,6 +14,7 @@
 #if (((FBM_SIZE * BLOCK_SIZE) << 3) != BLOCK_COUNT)
     #error "BLOCK MATH DIDN'T CHECK OUT"
 #endif
+#define DBM_SIZE (BLOCK_SIZE * (BLOCK_COUNT - FBM_SIZE))
 
 // Handy macro, does what it says on the tin
 #define BLOCKID_VALID(id) ((id > (FBM_SIZE - 1)) && (id < BLOCK_COUNT))
@@ -167,10 +173,17 @@ block_store_t *block_store_create() {
 // Let's allow writing to blocks not marked as in use as well, but log it like with read
 /*
  *PURPOSE: Reads data from  buffer and writes it to specified block and offset
- * INPUTS: block store, block id, offset, buffer to read from, umber of bytes to write
+ * INPUTS: block store, block id, offset, buffer to read from, number of bytes to write
  * RETURN: number of bytes written, or 0 if error
 */
 size_t block_store_write(block_store_t *const bs, const size_t block_id, const void *buffer, const size_t nbytes, const size_t offset) {
+    if( bs && bs->fbm && BLOCKID_VALID(block_id) && buffer 
+        && nbytes && (nbytes + offset <= BLOCK_SIZE)){
+        size_t total_offset = offset + (BLOCK_SIZE * (block_id - FBM_SIZE));
+        memcpy((void *)(bs->data_blocks + total_offset), buffer, nbytes);
+        block_store_errno = bitmap_test(bs->fbm, block_id) ? BS_OK : BS_FBM_REQUEST_MISMATCH;
+        return nbytes;
+    }
     block_store_errno = BS_FATAL;
     return 0;
 }
@@ -189,7 +202,36 @@ size_t block_store_write(block_store_t *const bs, const size_t block_id, const v
  * RETURN: pointer to new BS device, or null if unsucessful
 */
 block_store_t *block_store_import(const char *const filename) {
-    block_store_errno = BS_FATAL;
+    if(filename){
+        const int fd = open(filename, O_RDONLY);
+        if(fd != -1){
+            //Create a block store and check
+            block_store_t *bs = block_store_create();
+            if(bs){
+                //read into buffer
+                size_t fbmBytes = FBM_SIZE * BLOCK_SIZE;
+                uint8_t buffer[fbmBytes];
+                if( utility_read_file(fd, buffer, fbmBytes) == fbmBytes){
+                    bs->fbm = bitmap_import(fbmBytes, buffer);
+                    if( bs->fbm ){
+                        if( memcpy( bs->data_blocks, buffer, fbmBytes ) ){
+                            //format dbm
+                            bitmap_format( bs->dbm, 0 );
+                            block_store_errno = BS_OK;
+                            close(fd);
+                            return bs;
+                        }
+                    }
+                    assert(bs->fbm);
+                }
+                else{ block_store_errno = BS_FILE_ACCESS; }
+            }
+            assert(bs);
+        }
+        else{ block_store_errno = BS_FILE_ACCESS; }
+        close(fd);
+    }
+    else{ block_store_errno = BS_PARAM; }
     return NULL;
 }
 
@@ -208,6 +250,10 @@ block_store_t *block_store_import(const char *const filename) {
                 if (utility_write_file(fd, bs->data_blocks, BLOCK_SIZE * (BLOCK_COUNT - FBM_SIZE)) == (BLOCK_SIZE * (BLOCK_COUNT - FBM_SIZE))) {
                     block_store_errno = BS_OK;
                     close(fd);
+                    size_t i = 0;
+                    for(; i < FBM_SIZE ; i++){
+                        bitmap_reset(bs->dbm, i);
+                    }
                     return BLOCK_SIZE * BLOCK_COUNT;
                 }
             }
@@ -282,6 +328,18 @@ const char *block_store_strerror(block_store_status bs_err) {
  * RETURN:  
 */
 size_t utility_read_file(const int fd, uint8_t *buffer, const size_t count) {
+    if( !buffer || fd <= 0 || !count ){
+        assert(NULL);
+        return 0;
+    }
+    int size = read( fd, buffer, count );
+    if( size != -1 ){
+        close(fd);
+        assert(size);
+        return size;
+    }
+    close(fd);
+    assert(NULL);
     return 0;
 }
 
@@ -293,5 +351,11 @@ size_t utility_read_file(const int fd, uint8_t *buffer, const size_t count) {
  * RETURN:  
 */
 size_t utility_write_file(const int fd, const uint8_t *buffer, const size_t count) {
+    int size = write(fd, buffer, count);
+    if( size != -1 ){
+        close(fd);
+        return size;
+    }
+    close(fd);
     return 0;
 }
