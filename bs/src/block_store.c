@@ -230,7 +230,9 @@ block_store_t *block_store_import(const char *const filename) {
                 }
                 else{ block_store_errno = BS_FILE_ACCESS; }
             }
+            int temp = block_store_errno;
             block_store_destroy(bs);
+            block_store_errno = temp;
         }
         else{ block_store_errno = BS_FILE_ACCESS; }
         close(fd);
