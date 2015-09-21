@@ -161,7 +161,6 @@ block_store_t *block_store_create() {
     return 0;
 }
 
-// TODO: Implement, comment, param check
 // Gotta take read in nbytes from the buffer and write it to the offset of the block
 // Pretty easy, actually
 // Gotta remember to mess with the DBM!
@@ -173,11 +172,14 @@ block_store_t *block_store_create() {
 */
 size_t block_store_write(block_store_t *const bs, const size_t block_id, const void *buffer, const size_t nbytes, const size_t offset) {
     block_store_errno = BS_FATAL;
+    //Check params
     if( bs && bs->fbm && BLOCKID_VALID(block_id) && buffer 
         && nbytes && (nbytes + offset <= BLOCK_SIZE)){
         size_t total_offset = offset + (BLOCK_SIZE * (block_id - FBM_SIZE));
+        //copy buffer contents into data block and validate
         memcpy((void *)(bs->data_blocks + total_offset), buffer, nbytes);
         block_store_errno = bitmap_test(bs->fbm, block_id) ? BS_OK : BS_FBM_REQUEST_MISMATCH;
+        //initialize dbm
         bitmap_set(bs->dbm, block_id);
         return nbytes;
     }
@@ -185,7 +187,6 @@ size_t block_store_write(block_store_t *const bs, const size_t block_id, const v
     return 0;
 }
 
-// TODO: Implement, comment, param check
 // Gotta make a new BS object and read it from the file
 // Need to remember to get the file format right, where's the FBM??
 // Since it's just loaded from file, the DBM is easy
@@ -210,8 +211,12 @@ block_store_t *block_store_import(const char *const filename) {
                 size_t fbmBytes = FBM_SIZE * BLOCK_SIZE;
                 uint8_t buffer[fbmBytes];
                 if( utility_read_file(fd, buffer, fbmBytes) == fbmBytes){
+                     //initialize fbm
+                    //bs->fbm 
+                    //copy buffer into fbm
                     bs->fbm = bitmap_import(fbmBytes, buffer);
                     if( bs->fbm ){
+                        //read file into data block
                         if( utility_read_file(fd, bs->data_blocks, BLOCK_SIZE * (BLOCK_COUNT - FBM_SIZE)) == BLOCK_SIZE * (BLOCK_COUNT - FBM_SIZE) ){
                             //format dbm
                             bitmap_format( bs->dbm, 0 );
@@ -219,10 +224,13 @@ block_store_t *block_store_import(const char *const filename) {
                             close(fd);
                             return bs;
                         }
+                        else{ block_store_errno = BS_FILE_IO; }
                     }
+                    else{ block_store_errno = BS_FILE_IO; }
                 }
                 else{ block_store_errno = BS_FILE_ACCESS; }
             }
+            block_store_destroy(bs);
         }
         else{ block_store_errno = BS_FILE_ACCESS; }
         close(fd);
@@ -307,7 +315,6 @@ const char *block_store_strerror(block_store_status bs_err) {
 
 
 
-// TODO: Implement, comment, param check
 // It needs to read count bytes from fd into buffer
 // Probably a good idea to handle EINTR
 // Maybe do a block-based read? It's more efficient, but it's more complex
@@ -315,35 +322,40 @@ const char *block_store_strerror(block_store_status bs_err) {
 //  and 0 on error (can only really be a major disaster file error)
 // There should be POSIX stuff for this somewhere
 /*
- *PURPOSE:  
- * INPUTS:  
- * RETURN:  
+ *PURPOSE:  Read file contents into buffer, stopping at count bytes
+ * INPUTS:  file descriptor, buffer, count of bytes to read
+ * RETURN:  number of bytes read or 0 on error
 */
 size_t utility_read_file(const int fd, uint8_t *buffer, const size_t count) {
     if( !buffer || fd <= 0 || !count ){
         return 0;
     }
+    //read into buffer
     int size = read( fd, buffer, count );
     if( size != -1 ){
+        //retunr numebr of bytes read
         return size;
     }
+    //return on error
     return 0;
 }
 
-// TODO: implement, comment, param check
 // Exactly the same as read, but we're writing count from buffer to fd
 /*
- *PURPOSE:  
- * INPUTS:  
- * RETURN:  
+ *PURPOSE:  write to file from buffer, stopping at count bytes
+ * INPUTS:  file descriptor, buffer, count of bytes to write
+ * RETURN:  number of bytes written, or 0 on error
 */
 size_t utility_write_file(const int fd, const uint8_t *buffer, const size_t count) {
     if( !buffer || fd <= 0 || !count ){
         return 0;
     }
+    //write from buffer to file
     int size = write(fd, buffer, count);
     if( size != -1 ){
+        //return number of bytes written
         return size;
     }
+    //return on error
     return 0;
 }
